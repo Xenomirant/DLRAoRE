@@ -43,9 +43,14 @@ torchrun --standalone --nproc_per_node 1 torchrun_main.py \
     --optimizer low_rank_adamw  \
     --st_init_step_size 10000 \
     --subspace_update_method subtrack \
+    --kronecker_mode auto \
     --adaptive_optimizer \
     --recovery_scaling
 ```
+
+Set `--kronecker_mode none` (default) to keep existing behavior, or `--kronecker_mode auto` to enable Kronecker-style reshape/projection/reshape-back.
+
+For experiment tracking, set `--tracking_backend wandb` (default) or `--tracking_backend comet`.
 
 You can find a list of  example scripts in script folder.
 Ensure you configure dataset paths and checkpoint locations as needed.

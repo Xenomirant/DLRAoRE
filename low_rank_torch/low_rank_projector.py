@@ -8,7 +8,8 @@ class LowRankProjector:
             st_step_size_scheduler, st_step_size_coef,
             st_noise_sigma2, st_subspace_coef,
             subspace_update_interval, verbose=False,
-            use_acc_gradient=False
+            use_acc_gradient=False,
+            kronecker_mode="none",
     ):
         self.rank = rank
         self.verbose = verbose
@@ -28,15 +29,75 @@ class LowRankProjector:
 
         self.use_acc_grad = use_acc_gradient
         self.accumulated_grad = None
-       
+        self.kronecker_mode = kronecker_mode
+        self._kron_original_shape = None
+        self._kron_meta = None
 
     def project(self, full_rank_grad, iter, rand=False):
+        full_rank_grad = self._reshape_for_projection(full_rank_grad)
         if self.subspace_update_method == 'galore':
             return self.galore_projector(full_rank_grad, iter, rand)
         elif self.subspace_update_method == 'subtrack':
             return self.subtrack_projector(full_rank_grad, iter, rand)
         else:
             raise ValueError('method should be galore or subtrack')
+
+    def _reshape_for_projection(self, grad):
+        self._kron_original_shape = tuple(grad.shape)
+        self._kron_meta = {"kind": "identity"}
+
+        if self.kronecker_mode == "none":
+            return grad
+
+        if self.kronecker_mode != "auto":
+            raise ValueError("kronecker_mode should be none or auto")
+
+        if grad.ndim == 2:
+            rows, cols = grad.shape
+            row_a, row_b = self._balanced_factor_pair(rows)
+            col_a, col_b = self._balanced_factor_pair(cols)
+
+            self._kron_meta = {
+                "kind": "kron2d",
+                "rows": rows,
+                "cols": cols,
+                "row_a": row_a,
+                "row_b": row_b,
+                "col_a": col_a,
+                "col_b": col_b,
+            }
+
+            rearranged = grad.reshape(row_a, row_b, col_a, col_b).permute(0, 2, 1, 3)
+            return rearranged.reshape(row_a * col_a, row_b * col_b)
+
+        return grad
+
+    def _reshape_back_from_projection(self, grad2d):
+        if self._kron_original_shape is None:
+            return grad2d
+
+        if self._kron_meta is not None and self._kron_meta["kind"] == "kron2d":
+            row_a = self._kron_meta["row_a"]
+            row_b = self._kron_meta["row_b"]
+            col_a = self._kron_meta["col_a"]
+            col_b = self._kron_meta["col_b"]
+            rows = self._kron_meta["rows"]
+            cols = self._kron_meta["cols"]
+            restored = grad2d.reshape(row_a, col_a, row_b, col_b).permute(0, 2, 1, 3)
+            return restored.reshape(rows, cols)
+
+        if tuple(self._kron_original_shape) == tuple(grad2d.shape):
+            return grad2d
+
+        return grad2d.reshape(self._kron_original_shape)
+
+    @staticmethod
+    def _balanced_factor_pair(value):
+        root = int(value ** 0.5)
+        for left in range(root, 0, -1):
+            if value % left == 0:
+                return left, value // left
+        return 1, value
 
     def galore_projector(self, full_rank_grad, iter, rand):
         matrix = None
@@ -196,7 +257,8 @@ class LowRankProjector:
         elif self.proj_type == 'full':
             full_rank_grad = torch.matmul(self.ortho_matrix[0], low_rank_grad) @ self.ortho_matrix[1]
 
-        return full_rank_grad * self.scale
+        full_rank_grad = full_rank_grad * self.scale
+        return self._reshape_back_from_projection(full_rank_grad)
 
     # svd decomposition
     def get_orthogonal_matrix(self, weights, rank, type, rand):

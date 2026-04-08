@@ -5,3 +5,5 @@
 BAdam-local/src/badam.egg-info/
 wandb/
 plots/
+
+__pycache__/

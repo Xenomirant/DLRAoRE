@@ -202,6 +202,7 @@ def parse_args():
             "Only applicable when `--with_tracking` is passed."
         ),
     )
+    parser.add_argument("--tracking_backend", type=str, default="wandb", choices=["wandb", "comet"])
     parser.add_argument(
         "--ignore_mismatched_sizes",
         action="store_true",
@@ -213,6 +214,7 @@ def parse_args():
     parser.add_argument("--low_rank_scale", type=float, default=1.0)
     parser.add_argument("--proj_type", type=str, default="std")
     parser.add_argument("--subspace_update_method", type=str, choices=["galore", "subtrack"])
+    parser.add_argument("--kronecker_mode", type=str, default="none", choices=["none", "auto"])
     parser.add_argument("--adaptive_optimizer", action="store_true",
                         help="Whether to use adaptive optimizer for low-rank optimizers")
     parser.add_argument("--recovery_scaling", action="store_true")
@@ -284,17 +286,38 @@ def main(sweep_config=None):
     if args.seed is not None:
         set_seed(args.seed)
 
-    if args.enable_low_rank:
-        wandb.init(
-            project="SubTrack++GLUE",
-            name=f"{args.task_name}-{args.subspace_update_method}"
-        )
-    else:
-        wandb.init(
-            project="SubTrack++GLUE",
-            name=f"{args.task_name}-full-rank"
-        )
-    wandb.config.update(dict(vars(args)), allow_val_change=True)
+    tracker = None
+    tracker_name = (
+        f"{args.task_name}-{args.subspace_update_method}"
+        if args.enable_low_rank
+        else f"{args.task_name}-full-rank"
+    )
+    if accelerator.is_main_process:
+        if args.tracking_backend == "wandb":
+            wandb.init(project="SubTrack++GLUE", name=tracker_name)
+            tracker = wandb
+        else:
+            from comet_ml import Experiment
+            tracker = Experiment(project_name="SubTrack++GLUE")
+            tracker.set_name(tracker_name)
+
+    def tracker_update_config(values):
+        if not accelerator.is_main_process or tracker is None:
+            return
+        if args.tracking_backend == "wandb":
+            wandb.config.update(values, allow_val_change=True)
+        else:
+            tracker.log_parameters(values)
+
+    def tracker_log(values, step=None):
+        if not accelerator.is_main_process or tracker is None:
+            return
+        if args.tracking_backend == "wandb":
+            wandb.log(values, step=step)
+        else:
+            tracker.log_metrics(values, step=step)
+
+    tracker_update_config(dict(vars(args)))
 
     if accelerator.is_main_process:
         if args.push_to_hub:
@@ -554,12 +577,13 @@ def main(sweep_config=None):
                          'recovery_scaling': args.recovery_scaling,
                          'norm_growth_limit': args.norm_growth_limit,
                          'norm_growth_limiter_off': args.norm_growth_limiter_off,
+                         'kronecker_mode': args.kronecker_mode,
                          }]
         optimizer = LowRankAdamW(param_groups, lr=args.learning_rate, betas=(0.908, 0.99), eps=1e-8)
 
         n_params = sum(p.numel() for p in model.parameters())
         n_low_rank_params = sum(p.numel() for p in low_rank_params)
-        wandb.config.update({'n_params': n_params, 'n_low_rank_params': n_low_rank_params})
+        tracker_update_config({'n_params': n_params, 'n_low_rank_params': n_low_rank_params})
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
@@ -577,11 +601,11 @@ def main(sweep_config=None):
         num_warmup_steps=args.num_warmup_steps,
         num_training_steps=args.max_train_steps,
     )
-    wandb.config.update({
+    tracker_update_config({
         'lr_scheduler_type': args.lr_scheduler_type,
         'num_warmup_steps': args.num_warmup_steps,
         'num_training_steps': args.max_train_steps
-    }, allow_val_change=True)
+    })
 
     # Prepare everything with our `accelerator`.
     model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
@@ -728,12 +752,12 @@ def main(sweep_config=None):
                 step=completed_steps,
             )
 
-        wandb.log({
+        tracker_log({
             "performance": eval_metric,
             "train_loss": total_loss.item() / len(train_dataloader),
             "epoch": epoch,
             "step": completed_steps,
-        })
+        }, step=completed_steps)
 
         if args.push_to_hub and epoch < args.num_train_epochs - 1:
             accelerator.wait_for_everyone()
@@ -796,6 +820,9 @@ def main(sweep_config=None):
         all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
         with open(os.path.join(args.output_dir, "all_results.json"), "w") as f:
             json.dump(all_results, f)
+
+    if accelerator.is_main_process and args.tracking_backend == "comet" and tracker is not None:
+        tracker.end()
 
 
 if __name__ == "__main__":

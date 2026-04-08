@@ -1,9 +1,10 @@
 torch
-transformers==4.31.0
+transformers
 tokenizers
 datasets
 peft
-wandb
+# wandb
+comet_ml
 loguru
 nvitop
 lion-pytorch

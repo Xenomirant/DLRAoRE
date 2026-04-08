@@ -104,7 +104,8 @@ class AdamW(Optimizer):
                                 st_step_size_coef=group["st_step_size_coef"],
                                 st_noise_sigma2=group["st_noise_sigma2"],
                                 st_subspace_coef=group["st_subspace_coef"],
-                                subspace_update_interval=group["subspace_update_interval"]
+                                subspace_update_interval=group["subspace_update_interval"],
+                                kronecker_mode=group.get("kronecker_mode", "none"),
                             )
                         
                         rand = (state["step"] >= group["rand_epoch"])
@@ -122,7 +123,8 @@ class AdamW(Optimizer):
                                 st_step_size_coef=group["st_step_size_coef"],
                                 st_noise_sigma2=group["st_noise_sigma2"],
                                 st_subspace_coef=group["st_subspace_coef"],
-                                subspace_update_interval=group["subspace_update_interval"]
+                                subspace_update_interval=group["subspace_update_interval"],
+                                kronecker_mode=group.get("kronecker_mode", "none"),
                             )
 
                         grad, matrix = state["projector"].project(grad, state["step"], rand=False)

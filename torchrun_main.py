@@ -58,6 +58,7 @@ def parse_args(args):
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--name", type=str, default="test")
+    parser.add_argument("--tracking_backend", type=str, default="wandb", choices=["wandb", "comet"])
     parser.add_argument("--grad_clipping", type=float, default=0.0)
     # beta1 for adafactor
     parser.add_argument("--beta1", type=float, default=0.0)
@@ -68,6 +69,7 @@ def parse_args(args):
     parser.add_argument("--low_rank_scale", type=float, default=1.0)
     parser.add_argument("--proj_type", type=str, default="std")
     parser.add_argument("--subspace_update_method", type=str, choices=["galore", "subtrack"])
+    parser.add_argument("--kronecker_mode", type=str, default="none", choices=["none", "auto"])
     parser.add_argument("--adaptive_optimizer", action="store_true", 
                         help="Whether to use adaptive optimizer for low-rank optimizers")
     parser.add_argument("--recovery_scaling", action="store_true")
@@ -171,19 +173,43 @@ def main(args):
     # turn off logger
     if global_rank != 0: logger.remove()
 
-    # initialize wandb without config (it is passed later)
-    if 'low_rank' in args.optimizer.lower():
-        if global_rank == 0:
-            wandb.init(
-                project="C4",
-                name=f"{args.model_config.replace('configs/', '').replace('.json', '')}{args.subspace_update_method}"
-            )
-    else:
-        if global_rank == 0:
-            wandb.init(
-                project="C4",
-                name=f"{args.model_config.replace('configs/', '').replace('.json', '')}-full-rank"
-            )
+    tracker = None
+    tracker_run_name = (
+        f"{args.model_config.replace('configs/', '').replace('.json', '')}{args.subspace_update_method}"
+        if 'low_rank' in args.optimizer.lower()
+        else f"{args.model_config.replace('configs/', '').replace('.json', '')}-full-rank"
+    )
+    if global_rank == 0:
+        if args.tracking_backend == "wandb":
+            wandb.init(project="C4", name=tracker_run_name)
+            tracker = wandb
+        else:
+            from comet_ml import Experiment
+            tracker = Experiment(project_name="C4")
+            tracker.set_name(tracker_run_name)
+
+    def tracker_update_config(values):
+        if global_rank != 0 or tracker is None:
+            return
+        if args.tracking_backend == "wandb":
+            wandb.config.update(values, allow_val_change=True)
+        else:
+            tracker.log_parameters(values)
+
+    def tracker_log(values, step=None):
+        if global_rank != 0 or tracker is None:
+            return
+        if args.tracking_backend == "wandb":
+            wandb.log(values, step=step)
+        else:
+            tracker.log_metrics(values, step=step)
+
+    def tracker_run_ref():
+        if global_rank != 0 or tracker is None:
+            return None
+        if args.tracking_backend == "wandb":
+            return wandb.run.dir
+        return tracker.get_key()
 
     logger.info(f"Using dist with rank {global_rank} (only rank 0 will log)")
     logger.info("*" * 40)
@@ -285,8 +311,9 @@ def main(args):
     })
 
     if global_rank == 0:
-        wandb.config.update(run_config, allow_val_change=True)
-        wandb.save(os.path.abspath(__file__), policy="now")  # save current script
+        tracker_update_config(run_config)
+        if args.tracking_backend == "wandb":
+            wandb.save(os.path.abspath(__file__), policy="now")  # save current script
         # fix tqdm visual length to 80 so that the progress bar
         # doesn't jump around when changing from external display to laptop
         pbar = tqdm(total=args.num_training_steps - update_step, desc="Update steps", ncols=80)
@@ -325,6 +352,7 @@ def main(args):
                          'recovery_scaling': args.recovery_scaling,
                          'norm_growth_limit': args.norm_growth_limit,
                          'norm_growth_limiter_off': args.norm_growth_limiter_off,
+                         'kronecker_mode': args.kronecker_mode,
                          'rand_proj': args.rand_proj,
                          'rand_epoch': args.rand_ratio * args.num_training_steps
                          }]
@@ -401,7 +429,8 @@ def main(args):
                             'st_step_size_coef': args.st_step_size_coef,
                             'st_noise_sigma2': args.st_noise_sigma2,
                             'st_subspace_coef': args.st_subspace_coef,
-                            'subspace_update_interval': args.subspace_update_interval}],
+                            'subspace_update_interval': args.subspace_update_interval,
+                            'kronecker_mode': args.kronecker_mode}],
                         lr=args.lr, weight_decay=args.weight_decay)
                 else:
                     optimizer_dict[p] = bnb.optim.Adam8bit([p], lr=args.lr, weight_decay=args.weight_decay)
@@ -514,7 +543,8 @@ def main(args):
                 "update_step": update_step,
                 "global_step": global_step,
                 "config": run_config,
-                "wandb": wandb.run.dir,
+                "tracking_backend": args.tracking_backend,
+                "tracking_run": tracker_run_ref(),
                 "dtype": args.dtype,
             }
             torch.save(optimizer_checkpoint, f"{current_model_directory}/optimizer.pt")
@@ -543,7 +573,7 @@ def main(args):
                 model, preprocess_batched, pad_idx, global_rank, world_size, device, args.batch_size
             )
             if global_rank == 0:
-                wandb.log({
+                tracker_log({
                     "final_eval_loss": total_loss,
                     "final_eval_tokens": evaluated_on_tokens,
                 },
@@ -560,7 +590,7 @@ def main(args):
         batches_in_update = args.gradient_accumulation * world_size
 
         if global_rank == 0:
-            wandb.log({
+            tracker_log({
                 "loss": loss.item(),
                 "lr": lr,
                 "update_step": update_step,
@@ -596,7 +626,8 @@ def main(args):
             "update_step": update_step,
             "global_step": global_step,
             "config": run_config,
-            "wandb": wandb.run.dir,
+            "tracking_backend": args.tracking_backend,
+            "tracking_run": tracker_run_ref(),
             "dtype": args.dtype,
         }
         torch.save(optimizer_checkpoint, f"{current_model_directory}/optimizer.pt")
@@ -624,13 +655,15 @@ def main(args):
     )
 
     if global_rank == 0:
-        wandb.log({
+        tracker_log({
             "final_eval_loss": total_loss,
             "final_eval_tokens": evaluated_on_tokens,
         },
             step=global_step,
         )
         logger.info(f"Final eval loss: {total_loss}")
+        if args.tracking_backend == "comet":
+            tracker.end()
 
     logger.info("Script finished successfully")
     print(f"Rank {global_rank} finished successfully")
