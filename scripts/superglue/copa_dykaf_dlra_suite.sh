@@ -60,46 +60,36 @@ run_variant() {
   python run_super_glue.py "${COMMON_ARGS[@]}" "$@"
 }
 
-LOW_RANK_COMMON_ARGS=(
-  --enable_low_rank
-  "${TARGET_MODULE_ARGS[@]}"
-  --lora_r "${DLRA_RANK}"
-  --low_rank_scale "${LOW_RANK_SCALE}"
-  --subspace_update_interval "${SUBSPACE_UPDATE_INTERVAL}"
-  --weight_decay "${WEIGHT_DECAY}"
-)
+# LOW_RANK_COMMON_ARGS=(
+#   --enable_low_rank
+#   "${TARGET_MODULE_ARGS[@]}"
+#   --lora_r "${DLRA_RANK}"
+#   --low_rank_scale "${LOW_RANK_SCALE}"
+#   --subspace_update_interval "${SUBSPACE_UPDATE_INTERVAL}"
+#   --weight_decay "${WEIGHT_DECAY}"
+# )
 
-run_variant "GaLore" \
-  "${LOW_RANK_COMMON_ARGS[@]}" \
-  --subspace_update_method galore \
-  --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-galore"
+# run_variant "GaLore" \
+#   "${LOW_RANK_COMMON_ARGS[@]}" \
+#   --subspace_update_method galore \
+#   --kronecker_mode none \
+#   --run_name "${RUN_NAME_PREFIX}-galore"
 
-run_variant "SubTrack++" \
-  "${LOW_RANK_COMMON_ARGS[@]}" \
-  --subspace_update_method subtrack \
-  --st_init_step_size "${ST_INIT_STEP_SIZE}" \
-  --adaptive_optimizer \
-  --recovery_scaling \
-  --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-subtrackpp"
+# run_variant "SubTrack++" \
+#   "${LOW_RANK_COMMON_ARGS[@]}" \
+#   --subspace_update_method subtrack \
+#   --st_init_step_size "${ST_INIT_STEP_SIZE}" \
+#   --adaptive_optimizer \
+#   --recovery_scaling \
+#   --kronecker_mode none \
+#   --run_name "${RUN_NAME_PREFIX}-subtrackpp"
 
-run_variant "DyKAF" \
-  "${TARGET_MODULE_ARGS[@]}" \
-  --enable_dykaf \
-  --power_iterations "${POWER_ITERATIONS}" \
-  --weight_decay "${WEIGHT_DECAY}" \
-  --run_name "${RUN_NAME_PREFIX}-dykaf"
-
-run_variant "LowRankDyKAF adaptive-rand" \
-  "${TARGET_MODULE_ARGS[@]}" \
-  --enable_dykaf \
-  --low_rank_factors \
-  --factors_rank "${FACTORS_RANK}" \
-  --low_rank_proj rand \
-  --power_iterations "${POWER_ITERATIONS}" \
-  --weight_decay "${WEIGHT_DECAY}" \
-  --run_name "${RUN_NAME_PREFIX}-low-rank-dykaf-adaptive-rand"
+# run_variant "DyKAF" \
+#   "${TARGET_MODULE_ARGS[@]}" \
+#   --enable_dykaf \
+#   --power_iterations "${POWER_ITERATIONS}" \
+#   --weight_decay "${WEIGHT_DECAY}" \
+#   --run_name "${RUN_NAME_PREFIX}-dykaf"
 
 run_variant "LowRankDyKAF PSI" \
   "${TARGET_MODULE_ARGS[@]}" \
@@ -119,17 +109,7 @@ run_variant "DLRAdamW PSI" \
   --kronecker_mode none \
   --run_name "${RUN_NAME_PREFIX}-dlradamw-psi"
 
-run_variant "DLRAdamW adaptive-rand" \
-  "${LOW_RANK_COMMON_ARGS[@]}" \
-  --low_rank_method dlr \
-  --dlra_projection rand_svd \
-  --adaptive_rangefinder \
-  --dlra_update_mode add \
-  --power_iterations "${POWER_ITERATIONS}" \
-  --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-dlradamw-adaptive-rand"
-
-run_variant "DLRAdamW PSI" \
+  run_variant "DLRAdamW PSI" \
   "${LOW_RANK_COMMON_ARGS[@]}" \
   --low_rank_method dlr \
   --dlra_projection dlra \
@@ -137,16 +117,40 @@ run_variant "DLRAdamW PSI" \
   --kronecker_mode none \
   --run_name "${RUN_NAME_PREFIX}-dlradamw-ema-psi"
 
+
 run_variant "DLRAdamW adaptive-rand" \
   "${LOW_RANK_COMMON_ARGS[@]}" \
   --low_rank_method dlr \
-  --dlra_projection rand_svd \
+  --dlra_projection rand_nystrom \
+  --adaptive_rangefinder \
+  --dlra_update_mode add \
+  --power_iterations "${POWER_ITERATIONS}" \
+  --kronecker_mode none \
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-adaptive-rand"
+
+
+run_variant "DLRAdamW adaptive-rand" \
+  "${LOW_RANK_COMMON_ARGS[@]}" \
+  --low_rank_method dlr \
+  --dlra_projection rand_nystrom \
   --adaptive_rangefinder \
   --dlra_update_mode ema \
   --power_iterations "${POWER_ITERATIONS}" \
   --kronecker_mode none \
   --run_name "${RUN_NAME_PREFIX}-dlradamw-ema-adaptive-rand"
   
+
+
+  run_variant "LowRankDyKAF adaptive-rand" \
+  "${TARGET_MODULE_ARGS[@]}" \
+  --enable_dykaf \
+  --low_rank_factors \
+  --factors_rank "${FACTORS_RANK}" \
+  --low_rank_proj rand \
+  --power_iterations "${POWER_ITERATIONS}" \
+  --weight_decay "${WEIGHT_DECAY}" \
+  --run_name "${RUN_NAME_PREFIX}-low-rank-dykaf-adaptive-rand"
+
 
 echo "========================================"
 echo "Completed DyKAF/DLRA COPA suite"
