@@ -87,12 +87,41 @@ run_variant() {
 #   --kronecker_mode none \
 #   --run_name "${RUN_NAME_PREFIX}-subtrackpp"
 
-run_variant "DyKAF" \
+# run_variant "DyKAF" \
+#   "${TARGET_MODULE_ARGS[@]}" \
+#   --enable_dykaf \
+#   --power_iterations "${POWER_ITERATIONS}" \
+#   --weight_decay "${WEIGHT_DECAY}" \
+#   --run_name "${RUN_NAME_PREFIX}-dykaf"
+
+
+run_variant "LowRankDyKAF PSI" \
   "${TARGET_MODULE_ARGS[@]}" \
   --enable_dykaf \
+  --low_rank_factors \
+  --factors_rank "${FACTORS_RANK}" \
+  --low_rank_proj psi \
   --power_iterations "${POWER_ITERATIONS}" \
   --weight_decay "${WEIGHT_DECAY}" \
-  --run_name "${RUN_NAME_PREFIX}-dykaf"
+  --run_name "${RUN_NAME_PREFIX}-low-rank-dykaf-psi"
+
+
+run_variant "DLRAdamW PSI" \
+  "${LOW_RANK_COMMON_ARGS[@]}" \
+  --low_rank_method dlr \
+  --dlra_projection dlra \
+  --dlra_update_mode add \
+  --kronecker_mode none \
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-psi"
+
+  run_variant "DLRAdamW PSI" \
+  "${LOW_RANK_COMMON_ARGS[@]}" \
+  --low_rank_method dlr \
+  --dlra_projection dlra \
+  --dlra_update_mode ema \
+  --kronecker_mode none \
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-ema-psi"
+
 
 run_variant "LowRankDyKAF adaptive-rand" \
   "${TARGET_MODULE_ARGS[@]}" \
@@ -107,24 +136,6 @@ run_variant "LowRankDyKAF adaptive-rand" \
   --weight_decay "${WEIGHT_DECAY}" \
   --run_name "${RUN_NAME_PREFIX}-low-rank-dykaf-adaptive-rand"
 
-run_variant "LowRankDyKAF PSI" \
-  "${TARGET_MODULE_ARGS[@]}" \
-  --enable_dykaf \
-  --low_rank_factors \
-  --factors_rank "${FACTORS_RANK}" \
-  --low_rank_proj psi \
-  --power_iterations "${POWER_ITERATIONS}" \
-  --weight_decay "${WEIGHT_DECAY}" \
-  --run_name "${RUN_NAME_PREFIX}-low-rank-dykaf-psi"
-
-run_variant "DLRAdamW PSI" \
-  "${LOW_RANK_COMMON_ARGS[@]}" \
-  --low_rank_method dlr \
-  --dlra_projection dlra \
-  --dlra_update_mode add \
-  --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-dlradamw-psi"
-
 run_variant "DLRAdamW adaptive-rand" \
   "${LOW_RANK_COMMON_ARGS[@]}" \
   --low_rank_method dlr \
@@ -138,24 +149,19 @@ run_variant "DLRAdamW adaptive-rand" \
   --kronecker_mode none \
   --run_name "${RUN_NAME_PREFIX}-dlradamw-adaptive-rand"
 
-run_variant "DLRAdamW PSI" \
-  "${LOW_RANK_COMMON_ARGS[@]}" \
-  --low_rank_method dlr \
-  --dlra_projection dlra \
-  --dlra_update_mode ema \
-  --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-dlradamw-ema-psi"
-
 
 run_variant "DLRAdamW adaptive-rand" \
   "${LOW_RANK_COMMON_ARGS[@]}" \
   --low_rank_method dlr \
   --dlra_projection rand_nystrom \
   --adaptive_rangefinder \
+  --truncation_eps "${TRUNCATION_EPS}" \
+  --rangefinder_tau "${RANGEFINDER_TAU}" \
+  --rangefinder_beta "${RANGEFINDER_BETA}" \
   --dlra_update_mode add \
   --power_iterations "${POWER_ITERATIONS}" \
   --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-dlradamw-adaptive-rand"
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-adaptive-rand-nystrom"
 
 
 run_variant "DLRAdamW adaptive-rand" \
@@ -169,19 +175,7 @@ run_variant "DLRAdamW adaptive-rand" \
   --dlra_update_mode ema \
   --power_iterations "${POWER_ITERATIONS}" \
   --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-dlradamw-ema-adaptive-rand"
-  
-
-
-  run_variant "LowRankDyKAF adaptive-rand" \
-  "${TARGET_MODULE_ARGS[@]}" \
-  --enable_dykaf \
-  --low_rank_factors \
-  --factors_rank "${FACTORS_RANK}" \
-  --low_rank_proj rand \
-  --power_iterations "${POWER_ITERATIONS}" \
-  --weight_decay "${WEIGHT_DECAY}" \
-  --run_name "${RUN_NAME_PREFIX}-low-rank-dykaf-adaptive-rand"
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-ema-adaptive-rand-nystrom"
 
 
 echo "========================================"

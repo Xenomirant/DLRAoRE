@@ -36,7 +36,7 @@ class DLRAdamW(Optimizer):
             orthogonalization_eps: Optional[float] = None,
             dlra_projection: str = "rand_svd",
             dlra_update_mode: str = "add",
-            dlra_update_beta: float = 0.9,
+            dlra_update_beta: float = 0.99,
             adaptive_rangefinder: bool = True,
             oversampling: int = 3,
             power_iterations: int = 0,
