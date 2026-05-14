@@ -260,9 +260,9 @@ def parse_args():
     parser.add_argument("--factors_oversample", type=int, default=3)
     parser.add_argument("--low_rank_proj", type=str, default="psi", choices=["psi", "rand"])
     parser.add_argument("--factor_kronecker_mode", type=str, default="none", choices=["none", "auto"])
-    parser.add_argument("--truncation_eps", type=float, default=1e-8)
-    parser.add_argument("--rangefinder_tau", type=float, default=None)
-    parser.add_argument("--rangefinder_beta", type=float, default=1e-3)
+    parser.add_argument("--truncation_eps", type=float, default=1e-3)
+    parser.add_argument("--rangefinder_tau", type=float, default=1e-3)
+    parser.add_argument("--rangefinder_beta", type=float, default=1e-5)
     parser.add_argument("--dlra_projection", type=str, default="rand_svd", choices=["fixed", "dlra", "svd", "rand_svd", "nystrom", "rand_nystrom"])
     parser.add_argument("--dlra_update_mode", type=str, default="add", choices=["add", "ema"])
     parser.add_argument("--dlra_update_beta", type=float, default=0.9)
@@ -286,6 +286,42 @@ def parse_args():
         assert args.output_dir is not None, "Need an `output_dir` to create a repo when `--push_to_hub` is passed."
 
     return args
+
+
+def _selected_optimizer_params(model, args, target_modules_list):
+    if args.lora_all_modules:
+        embedding_param_ids = {
+            id(param)
+            for module in model.modules()
+            if isinstance(module, torch.nn.Embedding)
+            for param in module.parameters(recurse=False)
+        }
+        selected = [
+            (name, param)
+            for name, param in model.named_parameters()
+            if param.ndim > 1 and id(param) not in embedding_param_ids
+        ]
+    else:
+        selected = []
+        for module_name, module in model.named_modules():
+            if not isinstance(module, torch.nn.Linear):
+                continue
+            if not any(target_key in module_name for target_key in target_modules_list):
+                continue
+            selected.append((f"{module_name}.weight", module.weight))
+
+    selected_params = []
+    selected_names = []
+    seen = set()
+    for name, param in selected:
+        if id(param) in seen:
+            continue
+        seen.add(id(param))
+        print('enable low rank for weights in module: ', name)
+        selected_names.append(name)
+        selected_params.append(param)
+
+    return selected_params, selected_names
 
 
 def main(sweep_config=None):
@@ -448,15 +484,12 @@ def main(sweep_config=None):
     if not args.lora_all_modules:
         target_modules_list = ["q_proj", "v_proj"]
     else:
-        print('Enabling LoRA for all modules')
-        target_modules_list = ["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj", "k_proj", "o_proj"]
+        print('Enabling compared optimizers for all non-embedding matrix parameters')
+        target_modules_list = []
 
     if 'bert' in args.model_name_or_path:
         if not args.lora_all_modules:
             target_modules_list = ["query"]
-        else:
-            print('Enabling LoRA for all modules')
-            target_modules_list = ["query", "value", "key", "intermediate.dense", "output.dense"]
 
     if args.task_name is not None:
         sentence1_key, sentence2_key, sentence3_key, sentence4_key = task_to_keys[args.task_name]
@@ -580,20 +613,9 @@ def main(sweep_config=None):
     ]
 
     if args.enable_low_rank or args.enable_dykaf:
-        from torch import nn
-        low_rank_params = []
-        low_rank_module_names = []
-        for module_name, module in model.named_modules():
-            if not isinstance(module, nn.Linear):
-                continue
-
-            if not any(target_key in module_name for target_key in target_modules_list):
-                continue
-
-            print('enable low rank for weights in module: ', module_name)
-            low_rank_params.append(module.weight)
-            low_rank_module_names.append(module_name)
-
+        low_rank_params, low_rank_module_names = _selected_optimizer_params(
+            model, args, target_modules_list
+        )
         id_low_rank_params = [id(p) for p in low_rank_params]
         regular_params = [p for p in model.parameters() if id(p) not in id_low_rank_params]
 

@@ -144,7 +144,7 @@ def _dynamical_rangefinder(matrix: typing.Union[_LowRankMatrix, _SymmetricLowRan
         )
     return Q
 
-def _adaptive_dynamical_rangefinder(matrix, delta, tol: float = 1e-8, beta: float = 0.1):
+def _adaptive_dynamical_rangefinder(matrix, delta, tol: float = 1e-4, beta: float = 1e-5):
 
     K = max(1, -math.ceil(math.log(beta) / math.log(10.0)))
     eps_adaptive = math.sqrt(math.pi/2) * tol / 10
@@ -169,7 +169,7 @@ def _adaptive_dynamical_rangefinder(matrix, delta, tol: float = 1e-8, beta: floa
     return Q
 
 
-def _sym_proj_split(matrix: _SymmetricLowRankMatrix, delta: torch.Tensor, rank: int, truncation_eps: float = 1e-8):
+def _sym_proj_split(matrix: _SymmetricLowRankMatrix, delta: torch.Tensor, rank: int, truncation_eps: float = 1e-4):
     
     U, lam = matrix.factors
     
@@ -191,7 +191,7 @@ def _sym_proj_split(matrix: _SymmetricLowRankMatrix, delta: torch.Tensor, rank: 
         )
 
 
-def _sym_rand_proj_split(matrix: _SymmetricLowRankMatrix, delta: torch.Tensor, rank: int, oversampling: int=3, power_iters=0, adaptive=True, tol: float = 1e-8, beta: float=0.05, truncation_eps: float = 1e-8):
+def _sym_rand_proj_split(matrix: _SymmetricLowRankMatrix, delta: torch.Tensor, rank: int, oversampling: int=3, power_iters=0, adaptive=True, tol: float = 1e-4, beta: float=1e-5, truncation_eps: float = 1e-4):
 
     U, lam = matrix.factors
     
@@ -222,7 +222,7 @@ def _sym_rand_proj_split(matrix: _SymmetricLowRankMatrix, delta: torch.Tensor, r
         )
 
 
-def _proj_split(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, truncation_eps: float = 1e-8):
+def _proj_split(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, truncation_eps: float = 1e-4):
     
     left, sigmas, right = matrix.factors
     
@@ -255,7 +255,7 @@ def _proj_split(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, truncati
         V_bar.matmul(v_lrh.t()[:, :opt_rank])
         )
 
-def _rand_svd_proj_split(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, oversampling: int=3, power_iters=0, adaptive=True, tol: float = 1e-8, beta: float=0.05, truncation_eps: float = 1e-8):
+def _rand_svd_proj_split(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, oversampling: int=3, power_iters=0, adaptive=True, tol: float = 1e-4, beta: float=1e-5, truncation_eps: float = 1e-4):
     if matrix.shape[0] < matrix.shape[1]:
         return _rand_svd_proj_split_left(
             matrix.t(), delta.t(), rank, oversampling, power_iters, adaptive, tol, beta, truncation_eps
@@ -265,7 +265,7 @@ def _rand_svd_proj_split(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int,
     )
 
 
-def _rand_svd_proj_split_left(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, oversampling: int=3, power_iters=0, adaptive=True, tol: float = 1e-8, beta: float=0.05, truncation_eps: float = 1e-8):
+def _rand_svd_proj_split_left(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, oversampling: int=3, power_iters=0, adaptive=True, tol: float = 1e-4, beta: float=1e-5, truncation_eps: float = 1e-4):
     
     left, *_ = matrix.factors
 
@@ -296,7 +296,7 @@ def _rand_svd_proj_split_left(matrix: _LowRankMatrix, delta: torch.Tensor, rank:
 
 
 #TODO: handle minimal dimension
-def _rand_nystrom_proj_split(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, oversampling: int=3, power_iters=0, adaptive=True, tol: float = 1e-8, beta: float=0.05, truncation_eps: float = 1e-8):
+def _rand_nystrom_proj_split(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, oversampling: int=3, power_iters=0, adaptive=True, tol: float = 1e-3, beta: float=1e-5, truncation_eps: float = 1e-3):
     
     left, sigmas, right = matrix.factors
 
