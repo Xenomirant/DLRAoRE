@@ -6,4 +6,5 @@ BAdam-local/src/badam.egg-info/
 wandb/
 plots/
 
-__pycache__/
+**/__pycache__/
+logs/
