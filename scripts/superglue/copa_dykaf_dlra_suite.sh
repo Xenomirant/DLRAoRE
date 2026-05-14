@@ -29,6 +29,7 @@ ST_INIT_STEP_SIZE="${ST_INIT_STEP_SIZE:-50.0}"
 TRUNCATION_EPS="${TRUNCATION_EPS:-1e-3}"
 RANGEFINDER_TAU="${RANGEFINDER_TAU:-1e-3}"
 RANGEFINDER_BETA="${RANGEFINDER_BETA:-1e-5}"
+DLRA_UPDATE_BETA="${DLRA_UPDATE_BETA:-0.99}"
 USE_LORA_ALL_MODULES="${USE_LORA_ALL_MODULES:-1}"
 RUN_NAME_PREFIX="${RUN_NAME_PREFIX:-superglue-copa-base}"
 
@@ -143,6 +144,7 @@ run_variant "DLRAdamW PSI" \
   --low_rank_method dlr \
   --dlra_projection dlra \
   --dlra_update_mode ema \
+  --dlra_update_beta "${DLRA_UPDATE_BETA}" \
   --kronecker_mode none \
   --run_name "${RUN_NAME_PREFIX}-dlradamw-ema-psi"
 
@@ -155,6 +157,7 @@ run_variant "DLRAdamW adaptive-rand" \
   --rangefinder_tau "${RANGEFINDER_TAU}" \
   --rangefinder_beta "${RANGEFINDER_BETA}" \
   --dlra_update_mode ema \
+  --dlra_update_beta "${DLRA_UPDATE_BETA}" \
   --power_iterations "${POWER_ITERATIONS}" \
   --kronecker_mode none \
   --run_name "${RUN_NAME_PREFIX}-dlradamw-ema-adaptive-rand"

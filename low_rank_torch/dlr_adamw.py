@@ -19,9 +19,9 @@ class DLRAdamW(Optimizer):
     For parameter groups carrying a `rank` entry, matrix gradients are projected
     into evolving left/right subspaces, Adam moments are maintained in that
     projected core space, and updates are lifted back to the original parameter
-    space. Basis refreshes reuse the DLRA projection utilities on a tracked
-    low-rank gradient approximation. The tracked matrix can be replaced by the
-    current gradient, incremented by the current gradient, or updated as an EMA.
+    space. Every step reuses the DLRA projection utilities to advance a tracked
+    low-rank gradient approximation. The tracked matrix can be incremented by
+    the current gradient or updated as an EMA.
     """
 
     def __init__(
@@ -30,19 +30,19 @@ class DLRAdamW(Optimizer):
             lr: float = 1e-3,
             betas: Tuple[float, float] = (0.9, 0.999),
             eps: float = 1e-6,
-            truncation_eps: float = 1e-8,
+            truncation_eps: float = 1e-3,
             rangefinder_tau: Optional[float] = None,
-            rangefinder_beta: float = 1e-3,
-            orthogonalization_eps: Optional[float] = None,
+            rangefinder_beta: float = 1e-5,
             dlra_projection: str = "rand_svd",
             dlra_update_mode: str = "add",
-            dlra_update_beta: float = 0.9,
+            dlra_update_beta: float = 0.99,
             adaptive_rangefinder: bool = True,
             oversampling: int = 3,
             power_iterations: int = 0,
             weight_decay: float = 1e-3,
             correct_bias: bool = True,
             no_deprecation_warning: bool = False,
+            **kwargs
     ):
         if not no_deprecation_warning:
             warnings.warn(
@@ -66,8 +66,6 @@ class DLRAdamW(Optimizer):
             raise ValueError("rangefinder_tau must be positive")
         if not 0.0 < rangefinder_beta < 1.0:
             raise ValueError("rangefinder_beta must be in (0, 1)")
-        if orthogonalization_eps is not None and orthogonalization_eps <= 0.0:
-            raise ValueError("orthogonalization_eps must be positive")
         if dlra_projection not in ("fixed", "dlra", "svd", "rand_svd", "nystrom", "rand_nystrom"):
             raise ValueError("dlra_projection must be fixed, dlra, svd, rand_svd, nystrom, or rand_nystrom")
         if dlra_update_mode not in ("add", "ema"):
@@ -86,7 +84,6 @@ class DLRAdamW(Optimizer):
             "truncation_eps": truncation_eps,
             "rangefinder_tau": rangefinder_tau,
             "rangefinder_beta": rangefinder_beta,
-            "orthogonalization_eps": orthogonalization_eps if orthogonalization_eps is not None else eps,
             "dlra_projection": dlra_projection,
             "dlra_update_mode": dlra_update_mode,
             "dlra_update_beta": dlra_update_beta,
@@ -162,7 +159,7 @@ class DLRAdamW(Optimizer):
             state["exp_avg_sq"] = torch.zeros_like(state["exp_avg"])
             state["projection_meta"] = meta
 
-        if state["step"] > 0 and state["step"] % group["subspace_update_interval"] == 0:
+        if not needs_init:
             self._refresh_basis(state, grad_matrix, group, rank)
 
         q_l = state["q_l"]
@@ -244,13 +241,13 @@ def _state_tensor(tensor):
 def _validate_dlra_group_options(group):
     projection = group.get("dlra_projection", "rand_svd")
     update_mode = group.get("dlra_update_mode", "add")
-    update_beta = group.get("dlra_update_beta", .9)
+    update_beta = group.get("dlra_update_beta", 0.99)
     oversampling = group.get("oversampling", 3)
     power_iterations = group.get("power_iterations", 0)
 
     if projection not in ("fixed", "dlra", "svd", "rand_svd", "nystrom", "rand_nystrom"):
         raise ValueError("dlra_projection must be fixed, dlra, svd, rand_svd, nystrom, or rand_nystrom")
-    if update_mode not in ("replace", "add", "ema"):
+    if update_mode not in ("add", "ema"):
         raise ValueError("dlra_update_mode must be add, or ema")
     if not 0.0 < update_beta <= 1.0:
         raise ValueError("dlra_update_beta must be in (0, 1]")
@@ -261,9 +258,7 @@ def _validate_dlra_group_options(group):
 
 
 def _initial_gradient_approximation(grad_matrix, group, rank):
-    update_mode = group.get("dlra_update_mode", "add")
-    scale = group.get("dlra_update_beta", 0.9) if update_mode == "ema" else 0.9
-    U, values, Vh = torch.linalg.svd(grad_matrix * scale, full_matrices=False)
+    U, values, Vh = torch.linalg.svd(grad_matrix, full_matrices=False)
     rank = min(rank, values.numel(), _find_rank_for_relative_error(values, group["truncation_eps"]))
     return _LowRankMatrix(U[:, :rank], values[:rank], Vh[:rank, :].t())
 
@@ -274,7 +269,7 @@ def _updated_gradient_approximation(approximation, grad_matrix, group, rank):
         base = approximation
         delta = grad_matrix
     elif update_mode == "ema":
-        beta = group.get("dlra_update_beta", 0.9)
+        beta = group.get("dlra_update_beta", 0.99)
         base = _scale_low_rank_matrix(approximation, beta)
         delta = grad_matrix.mul(1-beta)
     else:
