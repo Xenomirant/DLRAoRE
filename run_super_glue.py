@@ -265,7 +265,7 @@ def parse_args():
     parser.add_argument("--rangefinder_beta", type=float, default=1e-5)
     parser.add_argument("--dlra_projection", type=str, default="rand_svd", choices=["fixed", "dlra", "svd", "rand_svd", "nystrom", "rand_nystrom"])
     parser.add_argument("--dlra_update_mode", type=str, default="add", choices=["add", "ema"])
-    parser.add_argument("--dlra_update_beta", type=float, default=0.9)
+    parser.add_argument("--dlra_update_beta", type=float, default=0.99)
     parser.add_argument("--adaptive_rangefinder", action="store_true")
     parser.add_argument("--disable_adaptive_rangefinder", action="store_true")
 
