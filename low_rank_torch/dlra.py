@@ -179,7 +179,7 @@ def _sym_proj_split(matrix: _SymmetricLowRankMatrix, delta: torch.Tensor, rank: 
         _low_rank_plus_delta_matmul(matrix, delta, Q_bar)
         )
 
-    lam_bar, U_bar = torch.linalg.eigh(_symmetrize(y_bar))
+    lam_bar, U_bar = torch.linalg.eigh(y_bar)
     lam_bar = lam_bar.flip(dims=(-1,)).clamp(min=0.0)
     U_bar = U_bar.flip(dims=(-1,))
 
@@ -210,7 +210,7 @@ def _sym_rand_proj_split(matrix: _SymmetricLowRankMatrix, delta: torch.Tensor, r
         _low_rank_plus_delta_matmul(matrix, delta, Q_bar)
         )
 
-    lam_bar, U_bar = torch.linalg.eigh(_symmetrize(y_bar))
+    lam_bar, U_bar = torch.linalg.eigh(y_bar)
     lam_bar = lam_bar.flip(dims=(-1,)).clamp(min=0.0)
     U_bar = U_bar.flip(dims=(-1,))
 

@@ -400,17 +400,25 @@ def _initial_low_rank_kronecker_factors(grad, rank, eps, power_iterations):
         sigma = u.dot(grad.matmul(v)).abs().clamp(min=eps)
         q_l = _orthonormal_columns_from_seed(u, left_rank, eps)
         q_r = _orthonormal_columns_from_seed(v, right_rank, eps)
-        lambda_l = torch.full((left_rank,), eps, dtype=grad.dtype, device=grad.device)
-        lambda_r = torch.full((right_rank,), eps, dtype=grad.dtype, device=grad.device)
-        lambda_l[0] = sigma + eps
-        lambda_r[0] = sigma + eps
+        lambda_l = _rank1_plus_random_spectrum(left_rank, sigma, eps, grad)
+        lambda_r = _rank1_plus_random_spectrum(right_rank, sigma, eps, grad)
         return _SymmetricLowRankMatrix(q_l, lambda_l), _SymmetricLowRankMatrix(q_r, lambda_r)
 
     q_l = _orthonormal_columns_from_seed(None, left_rank, eps, dtype=grad.dtype, device=grad.device, dim=rows)
     q_r = _orthonormal_columns_from_seed(None, right_rank, eps, dtype=grad.dtype, device=grad.device, dim=cols)
-    lambda_l = torch.full((left_rank,), eps, dtype=grad.dtype, device=grad.device)
-    lambda_r = torch.full((right_rank,), eps, dtype=grad.dtype, device=grad.device)
+    lambda_l = _random_eps_spectrum(left_rank, eps, grad)
+    lambda_r = _random_eps_spectrum(right_rank, eps, grad)
     return _SymmetricLowRankMatrix(q_l, lambda_l), _SymmetricLowRankMatrix(q_r, lambda_r)
+
+
+def _rank1_plus_random_spectrum(rank, sigma, eps, like):
+    values = _random_eps_spectrum(rank, eps, like)
+    values[0] = sigma + eps
+    return values
+
+
+def _random_eps_spectrum(rank, eps, like):
+    return torch.rand(rank, dtype=like.dtype, device=like.device).add_(1.0).mul_(eps)
 
 
 def _orthonormal_columns_from_seed(seed, rank, eps, dtype=None, device=None, dim=None):
