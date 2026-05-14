@@ -26,6 +26,9 @@ DLRA_RANK="${DLRA_RANK:-32}"
 LOW_RANK_SCALE="${LOW_RANK_SCALE:-4}"
 SUBSPACE_UPDATE_INTERVAL="${SUBSPACE_UPDATE_INTERVAL:-100}"
 ST_INIT_STEP_SIZE="${ST_INIT_STEP_SIZE:-50.0}"
+TRUNCATION_EPS="${TRUNCATION_EPS:-1e-3}"
+RANGEFINDER_TAU="${RANGEFINDER_TAU:-1e-3}"
+RANGEFINDER_BETA="${RANGEFINDER_BETA:-1e-5}"
 USE_LORA_ALL_MODULES="${USE_LORA_ALL_MODULES:-1}"
 RUN_NAME_PREFIX="${RUN_NAME_PREFIX:-superglue-copa-large}"
 
@@ -97,6 +100,9 @@ run_variant "LowRankDyKAF adaptive-rand" \
   --low_rank_factors \
   --factors_rank "${FACTORS_RANK}" \
   --low_rank_proj rand \
+  --truncation_eps "${TRUNCATION_EPS}" \
+  --rangefinder_tau "${RANGEFINDER_TAU}" \
+  --rangefinder_beta "${RANGEFINDER_BETA}" \
   --power_iterations "${POWER_ITERATIONS}" \
   --weight_decay "${WEIGHT_DECAY}" \
   --run_name "${RUN_NAME_PREFIX}-low-rank-dykaf-adaptive-rand"
@@ -124,6 +130,9 @@ run_variant "DLRAdamW adaptive-rand" \
   --low_rank_method dlr \
   --dlra_projection rand_svd \
   --adaptive_rangefinder \
+  --truncation_eps "${TRUNCATION_EPS}" \
+  --rangefinder_tau "${RANGEFINDER_TAU}" \
+  --rangefinder_beta "${RANGEFINDER_BETA}" \
   --dlra_update_mode add \
   --power_iterations "${POWER_ITERATIONS}" \
   --kronecker_mode none \
@@ -142,6 +151,9 @@ run_variant "DLRAdamW adaptive-rand" \
   --low_rank_method dlr \
   --dlra_projection rand_svd \
   --adaptive_rangefinder \
+  --truncation_eps "${TRUNCATION_EPS}" \
+  --rangefinder_tau "${RANGEFINDER_TAU}" \
+  --rangefinder_beta "${RANGEFINDER_BETA}" \
   --dlra_update_mode ema \
   --power_iterations "${POWER_ITERATIONS}" \
   --kronecker_mode none \
