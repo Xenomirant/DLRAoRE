@@ -18,7 +18,9 @@ class _SymmetricLowRankMatrix:
     def matmul_l(self, lhs):
         return lhs.matmul(self.factor).matmul(self.sigmas.unsqueeze(1) * self.factor.t())
     
-    def matmul(self, lhs, rhs):
+    def matmul(self, lhs, rhs=None):
+        if rhs is None:
+            return self.matmul_r(lhs)
         return lhs.matmul(self.factor).matmul(self.sigmas.unsqueeze(1) * self.factor.t().matmul(rhs)) 
 
     def full_matrix(self):
@@ -72,6 +74,11 @@ class _LowRankMatrix:
     @property
     def factors(self):
         return self.left, self.sigmas, self.right
+
+
+def _scale_low_rank_matrix(matrix, scale):
+    left, core, right = matrix.factors
+    return _LowRankMatrix(left, core * scale, right)
 
 
 def _find_rank_for_relative_error(eigs: torch.Tensor, truncation_eps: float):
@@ -248,8 +255,17 @@ def _proj_split(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, truncati
         V_bar.matmul(v_lrh.t()[:, :opt_rank])
         )
 
-#TODO: handle using minimal dimension for SVD
 def _rand_svd_proj_split(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, oversampling: int=3, power_iters=0, adaptive=True, tol: float = 1e-8, beta: float=0.05, truncation_eps: float = 1e-8):
+    if matrix.shape[0] < matrix.shape[1]:
+        return _rand_svd_proj_split_left(
+            matrix.t(), delta.t(), rank, oversampling, power_iters, adaptive, tol, beta, truncation_eps
+        ).t()
+    return _rand_svd_proj_split_left(
+        matrix, delta, rank, oversampling, power_iters, adaptive, tol, beta, truncation_eps
+    )
+
+
+def _rand_svd_proj_split_left(matrix: _LowRankMatrix, delta: torch.Tensor, rank: int, oversampling: int=3, power_iters=0, adaptive=True, tol: float = 1e-8, beta: float=0.05, truncation_eps: float = 1e-8):
     
     left, *_ = matrix.factors
 
