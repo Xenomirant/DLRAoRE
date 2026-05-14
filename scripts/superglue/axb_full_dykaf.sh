@@ -1,0 +1,13 @@
+python run_super_glue.py \
+    --model_name_or_path roberta-large \
+    --task_name axb \
+    --enable_dykaf \
+    --max_length 512 \
+    --seed=1234 \
+    --per_device_train_batch_size 16 \
+    --learning_rate 1e-5 \
+    --num_train_epochs 30 \
+    --power_iterations 3 \
+    --weight_decay 0.01 \
+    --tracking_backend comet \
+    --run_name superglue-axb-dykaf-full

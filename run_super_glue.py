@@ -30,10 +30,13 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
 from datasets import load_dataset
-from huggingface_hub import Repository, create_repo
+from huggingface_hub import create_repo, upload_folder
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
-import wandb
+try:
+    import wandb
+except ImportError:
+    wandb = None
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,
@@ -46,10 +49,16 @@ from transformers import (
     get_scheduler,
     LlamaForSequenceClassification
 )
-from transformers.utils import send_example_telemetry
+try:
+    from transformers.utils import send_example_telemetry
+except ImportError:
+    def send_example_telemetry(*args, **kwargs):
+        return None
 from transformers.utils.versions import require_version
 
 from low_rank_torch import LowRankAdamW
+from low_rank_torch.dlr_adamw import DLRAdamW
+from low_rank_torch.dykaf import DyKAF
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 # check_min_version("4.38.0.dev0")
@@ -205,7 +214,8 @@ def parse_args():
             "Only applicable when `--with_tracking` is passed."
         ),
     )
-    parser.add_argument("--tracking_backend", type=str, default="wandb", choices=["wandb", "comet"])
+    parser.add_argument("--tracking_backend", type=str, default="wandb", choices=["wandb", "comet", "none"])
+    parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument(
         "--ignore_mismatched_sizes",
         action="store_true",
@@ -240,6 +250,24 @@ def parse_args():
     parser.add_argument("--eval_llama", action="store_true", help="Whether or not to evaluate llama model.")
     # low_rank_method
     parser.add_argument("--low_rank_method", type=str, default=None, help="low rank method for wandb sweep")
+    parser.add_argument("--enable_dykaf", action="store_true", help="Whether or not to use the DyKAF optimizer.")
+    parser.add_argument("--precondition_frequency", type=int, default=10)
+    parser.add_argument("--rank1_second_moment", action="store_true")
+    parser.add_argument("--power_iterations", type=int, default=3)
+    parser.add_argument("--exact_preconditioner_eigs", action="store_true")
+    parser.add_argument("--low_rank_factors", action="store_true")
+    parser.add_argument("--factors_rank", type=int, default=64)
+    parser.add_argument("--factors_oversample", type=int, default=3)
+    parser.add_argument("--low_rank_proj", type=str, default="psi", choices=["psi", "rand"])
+    parser.add_argument("--factor_kronecker_mode", type=str, default="none", choices=["none", "auto"])
+    parser.add_argument("--truncation_eps", type=float, default=1e-8)
+    parser.add_argument("--rangefinder_tau", type=float, default=None)
+    parser.add_argument("--rangefinder_beta", type=float, default=1e-3)
+    parser.add_argument("--dlra_projection", type=str, default="rand_svd", choices=["fixed", "dlra", "svd", "rand_svd", "nystrom", "rand_nystrom"])
+    parser.add_argument("--dlra_update_mode", type=str, default="add", choices=["add", "ema"])
+    parser.add_argument("--dlra_update_beta", type=float, default=0.9)
+    parser.add_argument("--adaptive_rangefinder", action="store_true")
+    parser.add_argument("--disable_adaptive_rangefinder", action="store_true")
 
     args = parser.parse_args()
 
@@ -282,16 +310,18 @@ def main(sweep_config=None):
         set_seed(args.seed)
 
     tracker = None
-    tracker_name = (
+    tracker_name = args.run_name or (
         f"{args.task_name}-{args.subspace_update_method}"
         if args.enable_low_rank
         else f"{args.task_name}-full-rank"
     )
     if accelerator.is_main_process:
         if args.tracking_backend == "wandb":
+            if wandb is None:
+                raise ImportError("wandb is not installed; use --tracking_backend comet or install wandb.")
             wandb.init(project="SubTrack++SUPER_GLUE", name=tracker_name)
             tracker = wandb
-        else:
+        elif args.tracking_backend == "comet":
             from comet_ml import Experiment
             tracker = Experiment(project_name="SubTrack++SUPER_GLUE")
             tracker.set_name(tracker_name)
@@ -320,7 +350,6 @@ def main(sweep_config=None):
             if repo_name is None:
                 repo_name = Path(args.output_dir).absolute().name
             repo_id = create_repo(repo_name, exist_ok=True, token=args.hub_token).repo_id
-            repo = Repository(args.output_dir, clone_from=repo_id, token=args.hub_token)
 
             with open(os.path.join(args.output_dir, ".gitignore"), "w+") as gitignore:
                 if "step_*" not in gitignore:
@@ -550,11 +579,10 @@ def main(sweep_config=None):
         },
     ]
 
-    if not args.enable_low_rank:
-        optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
-    else:
+    if args.enable_low_rank or args.enable_dykaf:
         from torch import nn
         low_rank_params = []
+        low_rank_module_names = []
         for module_name, module in model.named_modules():
             if not isinstance(module, nn.Linear):
                 continue
@@ -564,11 +592,41 @@ def main(sweep_config=None):
 
             print('enable low rank for weights in module: ', module_name)
             low_rank_params.append(module.weight)
+            low_rank_module_names.append(module_name)
 
         id_low_rank_params = [id(p) for p in low_rank_params]
         regular_params = [p for p in model.parameters() if id(p) not in id_low_rank_params]
+
+    if args.enable_dykaf:
+        dykaf_param_groups = [
+            {'params': regular_params, 'dykaf': False},
+            {'params': low_rank_params, 'module_names': low_rank_module_names, 'dykaf': True},
+        ]
+        optimizer = DyKAF(
+            dykaf_param_groups,
+            lr=args.learning_rate,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            truncation_eps=args.truncation_eps,
+            rangefinder_tau=args.rangefinder_tau,
+            rangefinder_beta=args.rangefinder_beta,
+            weight_decay=args.weight_decay,
+            precondition_frequency=args.precondition_frequency,
+            rank1_second_moment=args.rank1_second_moment,
+            power_iterations=args.power_iterations,
+            exact_preconditioner_eigs=args.exact_preconditioner_eigs,
+            low_rank_factors=args.low_rank_factors,
+            factors_rank=args.factors_rank,
+            low_rank_proj=args.low_rank_proj,
+        )
+        n_params = sum(p.numel() for p in model.parameters())
+        n_dykaf_params = sum(p.numel() for p in low_rank_params)
+        tracker_update_config({'n_params': n_params, 'n_dykaf_params': n_dykaf_params})
+    elif not args.enable_low_rank:
+        optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
+    else:
         param_groups = [{'params': regular_params},
-                        {'params': low_rank_params, 'rank': args.lora_r,
+                        {'params': low_rank_params, 'module_names': low_rank_module_names, 'rank': args.lora_r,
                          'scale': args.low_rank_scale, 'proj_type': args.proj_type,
                          'subspace_update_method': args.subspace_update_method,
                          'st_init_step_size': args.st_init_step_size,
@@ -581,8 +639,36 @@ def main(sweep_config=None):
                          'recovery_scaling': args.recovery_scaling,
                          'norm_growth_limit': args.norm_growth_limit,
                          'norm_growth_limiter_off': args.norm_growth_limiter_off,
-                         'kronecker_mode': args.kronecker_mode,}]
-        optimizer = LowRankAdamW(param_groups, lr=args.learning_rate, betas=(0.908, 0.99), eps=1e-8)
+                         'kronecker_mode': args.kronecker_mode,
+                         'dlra_projection': args.dlra_projection,
+                         'dlra_update_mode': args.dlra_update_mode,
+                         'dlra_update_beta': args.dlra_update_beta,
+                         'adaptive_rangefinder': args.adaptive_rangefinder or not args.disable_adaptive_rangefinder,
+                         'power_iterations': args.power_iterations,
+                         'truncation_eps': args.truncation_eps,
+                         'rangefinder_tau': args.rangefinder_tau,
+                         'rangefinder_beta': args.rangefinder_beta,}]
+        if args.low_rank_method == "dlr":
+            optimizer = DLRAdamW(
+                param_groups,
+                lr=args.learning_rate,
+                betas=(0.9, 0.999),
+                eps=1e-8,
+                truncation_eps=args.truncation_eps,
+                rangefinder_tau=args.rangefinder_tau,
+                rangefinder_beta=args.rangefinder_beta,
+                power_iterations=args.power_iterations,
+                weight_decay=args.weight_decay,
+                no_deprecation_warning=True,
+            )
+        else:
+            optimizer = LowRankAdamW(
+                param_groups,
+                lr=args.learning_rate,
+                betas=(0.908, 0.99),
+                eps=1e-8,
+                weight_decay=args.weight_decay,
+            )
 
         n_params = sum(p.numel() for p in model.parameters())
         n_low_rank_params = sum(p.numel() for p in low_rank_params)
@@ -764,8 +850,12 @@ def main(sweep_config=None):
             )
             if accelerator.is_main_process:
                 tokenizer.save_pretrained(args.output_dir)
-                repo.push_to_hub(
-                    commit_message=f"Training in progress epoch {epoch}", blocking=False, auto_lfs_prune=True
+                upload_folder(
+                    repo_id=repo_id,
+                    folder_path=args.output_dir,
+                    commit_message=f"Training in progress epoch {epoch}",
+                    token=args.hub_token,
+                    run_as_future=True,
                 )
 
         if args.checkpointing_steps == "epoch":
@@ -791,7 +881,12 @@ def main(sweep_config=None):
         if accelerator.is_main_process:
             tokenizer.save_pretrained(args.output_dir)
             if args.push_to_hub:
-                repo.push_to_hub(commit_message="End of training", auto_lfs_prune=True)
+                upload_folder(
+                    repo_id=repo_id,
+                    folder_path=args.output_dir,
+                    commit_message="End of training",
+                    token=args.hub_token,
+                )
 
     if args.task_name == "mnli":
         eval_dataset = processed_datasets["validation_mismatched"]

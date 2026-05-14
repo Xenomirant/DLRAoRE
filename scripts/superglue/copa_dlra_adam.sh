@@ -1,0 +1,18 @@
+python run_super_glue.py \
+    --model_name_or_path roberta-large \
+    --task_name copa \
+    --enable_low_rank \
+    --low_rank_method dlr \
+    --lora_all_modules \
+    --max_length 512 \
+    --seed=1234 \
+    --lora_r 8 \
+    --low_rank_scale 4 \
+    --per_device_train_batch_size 16 \
+    --subspace_update_interval 100 \
+    --learning_rate 1e-5 \
+    --num_train_epochs 30 \
+    --weight_decay 0.001 \
+    --tracking_backend comet \
+    --kronecker_mode none \
+    --run_name superglue-copa-dlra-adam

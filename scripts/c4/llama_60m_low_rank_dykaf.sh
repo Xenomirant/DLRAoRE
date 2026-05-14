@@ -1,0 +1,19 @@
+torchrun --standalone --nproc_per_node 1 torchrun_main.py \
+    --model_config configs/llama_60m.json \
+    --single_gpu \
+    --lr 0.001 \
+    --batch_size 128 \
+    --total_batch_size 256 \
+    --num_training_steps 10000 \
+    --warmup_steps 1000 \
+    --weight_decay 0.01 \
+    --dtype bfloat16 \
+    --eval_every 10000 \
+    --optimizer low_rank_dykaf \
+    --dykaf_precondition_frequency 10 \
+    --dykaf_low_rank_factors \
+    --dykaf_factors_rank 64 \
+    --dykaf_factors_oversample 5 \
+    --dykaf_low_rank_proj psi \
+    --dykaf_power_iterations 3 \
+    --dykaf_factor_kronecker_mode auto

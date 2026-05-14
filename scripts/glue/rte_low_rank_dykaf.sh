@@ -1,0 +1,17 @@
+python run_glue.py \
+    --model_name_or_path roberta-base \
+    --task_name rte \
+    --max_length 512 \
+    --seed=1234 \
+    --per_device_train_batch_size 16 \
+    --learning_rate 1e-5 \
+    --num_train_epochs 30 \
+    --weight_decay 0.01 \
+    --enable_dykaf \
+    --low_rank_factors \
+    --factors_rank 8 \
+    --factors_oversample 5 \
+    --low_rank_proj psi \
+    --power_iterations 3 \
+    --factor_kronecker_mode auto \
+    --tracking_backend comet

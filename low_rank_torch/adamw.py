@@ -149,10 +149,8 @@ class AdamW(Optimizer):
                 # GoLore
                 if matrix is not None:
                     if "matrix" in state:
-                        if state["projector"].proj_type == "left":
-                            exp_avg = matrix.T @ (state["matrix"] @ exp_avg)
-                        else:
-                            exp_avg = (exp_avg @ state["matrix"]) @ matrix.T
+                        exp_avg = _transport_projected_momentum(exp_avg, state["matrix"], matrix)
+                        state["exp_avg"] = exp_avg
                     state["matrix"] = matrix 
                 
                 beta1, beta2 = group["betas"]
@@ -259,3 +257,16 @@ class AdamW(Optimizer):
                     p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
 
         return loss
+
+
+def _transport_projected_momentum(exp_avg, old_matrix, new_matrix):
+    if exp_avg.shape[0] == old_matrix.shape[1] and exp_avg.shape[0] == new_matrix.shape[1]:
+        return new_matrix.t().matmul(old_matrix.matmul(exp_avg))
+    if exp_avg.shape[1] == old_matrix.shape[0] and exp_avg.shape[1] == new_matrix.shape[0]:
+        return exp_avg.matmul(old_matrix).matmul(new_matrix.t())
+    raise RuntimeError(
+        "Cannot transport projected momentum: "
+        f"exp_avg={tuple(exp_avg.shape)}, "
+        f"old_matrix={tuple(old_matrix.shape)}, "
+        f"new_matrix={tuple(new_matrix.shape)}"
+    )

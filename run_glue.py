@@ -30,10 +30,13 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
 from datasets import load_dataset
-from huggingface_hub import Repository, create_repo
+from huggingface_hub import create_repo, upload_folder
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
-import wandb
+try:
+    import wandb
+except ImportError:
+    wandb = None
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,
@@ -45,7 +48,11 @@ from transformers import (
     get_scheduler,
     LlamaForSequenceClassification
 )
-from transformers.utils import send_example_telemetry
+try:
+    from transformers.utils import send_example_telemetry
+except ImportError:
+    def send_example_telemetry(*args, **kwargs):
+        return None
 from transformers.utils.versions import require_version
 
 from low_rank_torch import LowRankAdamW
@@ -294,6 +301,8 @@ def main(sweep_config=None):
     )
     if accelerator.is_main_process:
         if args.tracking_backend == "wandb":
+            if wandb is None:
+                raise ImportError("wandb is not installed; use --tracking_backend comet or install wandb.")
             wandb.init(project="SubTrack++GLUE", name=tracker_name)
             tracker = wandb
         else:
@@ -325,7 +334,6 @@ def main(sweep_config=None):
             if repo_name is None:
                 repo_name = Path(args.output_dir).absolute().name
             repo_id = create_repo(repo_name, exist_ok=True, token=args.hub_token).repo_id
-            repo = Repository(args.output_dir, clone_from=repo_id, token=args.hub_token)
 
             with open(os.path.join(args.output_dir, ".gitignore"), "w+") as gitignore:
                 if "step_*" not in gitignore:
@@ -767,8 +775,12 @@ def main(sweep_config=None):
             )
             if accelerator.is_main_process:
                 tokenizer.save_pretrained(args.output_dir)
-                repo.push_to_hub(
-                    commit_message=f"Training in progress epoch {epoch}", blocking=False, auto_lfs_prune=True
+                upload_folder(
+                    repo_id=repo_id,
+                    folder_path=args.output_dir,
+                    commit_message=f"Training in progress epoch {epoch}",
+                    token=args.hub_token,
+                    run_as_future=True,
                 )
 
         if args.checkpointing_steps == "epoch":
@@ -794,7 +806,12 @@ def main(sweep_config=None):
         if accelerator.is_main_process:
             tokenizer.save_pretrained(args.output_dir)
             if args.push_to_hub:
-                repo.push_to_hub(commit_message="End of training", auto_lfs_prune=True)
+                upload_folder(
+                    repo_id=repo_id,
+                    folder_path=args.output_dir,
+                    commit_message="End of training",
+                    token=args.hub_token,
+                )
 
     if args.task_name == "mnli":
         # Final evaluation on mismatched validation set
