@@ -214,32 +214,32 @@ class AdamW(Optimizer):
                             del C, exp_avg_C  
                                
                     if group.get("recovery_scaling", False):
-                        subgrad = state["projector"].project_back(grad)
-                        norm_grad = state["projector"].project_back(norm_grad)
-                        norm_dim = 0 if norm_grad.shape[0] < norm_grad.shape[1] else 1
-                        scaling_factor = (
-                            torch.norm(norm_grad, dim=norm_dim) /
-                            (torch.norm(subgrad, dim=norm_dim) + 1e-8)
-                        )
-                        if norm_dim == 1:
-                            scaling_factor = scaling_factor.unsqueeze(1)
-                        scaling_grad = (p.grad - subgrad) * scaling_factor
-
-                        # Norm-Growth Limiter
-                        if not group.get("norm_growth_limiter_off", False):
-                            if "scaling_grad" in state:
-                                scaling_grad_norm = torch.norm(scaling_grad)
-                                lim = group.get("norm_growth_limit", 1.01)
-                                limiter = max(
-                                    scaling_grad_norm / (state["scaling_grad"] + 1e-8),
-                                    lim,
-                                ) / lim
-                                scaling_grad = scaling_grad / limiter
-                                state["scaling_grad"] = scaling_grad_norm / limiter
-                            else:
-                                state["scaling_grad"] = torch.norm(scaling_grad)
-
-                        norm_grad = norm_grad + scaling_grad
+                            subgrad = state["projector"].project_back(grad)
+                            norm_dim = 0 if norm_grad.shape[0] < norm_grad.shape[1] else 1
+                            scaling_factor = (
+                                torch.norm(norm_grad, dim=norm_dim) /
+                                (torch.norm(grad, dim=norm_dim) + 1e-8)
+                            )
+                            if norm_dim == 1:
+                                scaling_factor = scaling_factor.unsqueeze(1)
+                            scaling_grad = (p.grad - subgrad) * scaling_factor
+                            
+                            # Norm-Growth Limiter
+                            if not group.get("norm_growth_limiter_off", False):
+                                if "scaling_grad" in state:
+                                    scaling_grad_norm = torch.norm(scaling_grad)
+                                    lim = group.get("norm_growth_limit", 1.01)
+                                    limiter = max(
+                                        scaling_grad_norm / (state["scaling_grad"] + 1e-8),
+                                        lim,
+                                    ) / lim
+                                    scaling_grad = scaling_grad / limiter
+                                    state["scaling_grad"] = scaling_grad_norm / limiter
+                             
+                                else:
+                                    state["scaling_grad"] = torch.norm(scaling_grad)
+                            
+                            norm_grad = state["projector"].project_back(norm_grad) + scaling_grad
                     else:
                         norm_grad = state["projector"].project_back(norm_grad)
 
