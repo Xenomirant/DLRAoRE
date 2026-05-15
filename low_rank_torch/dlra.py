@@ -81,6 +81,65 @@ def _scale_low_rank_matrix(matrix, scale):
     return _LowRankMatrix(left, core * scale, right)
 
 
+def _reshape_for_kronecker_projection(matrix, kronecker_mode):
+    meta = {"kind": "identity"}
+    if kronecker_mode == "none":
+        return matrix, meta
+    if kronecker_mode != "auto":
+        raise ValueError("kronecker_mode should be none or auto")
+    if matrix.ndim != 2:
+        return matrix, meta
+
+    rows, cols = matrix.shape
+    row_a, row_b = _balanced_factor_pair(rows)
+    col_a, col_b = _balanced_factor_pair(cols)
+    if row_a == 1 or row_b == 1 or col_a == 1 or col_b == 1:
+        return matrix, meta
+
+    return (
+        einops.rearrange(
+            matrix,
+            "(row_a row_b) (col_a col_b) -> (row_a col_a) (row_b col_b)",
+            row_a=row_a,
+            row_b=row_b,
+            col_a=col_a,
+            col_b=col_b,
+        ),
+        {
+            "kind": "kron2d",
+            "rows": rows,
+            "cols": cols,
+            "row_a": row_a,
+            "row_b": row_b,
+            "col_a": col_a,
+            "col_b": col_b,
+        },
+    )
+
+
+def _reshape_back_from_kronecker_projection(matrix, meta, original_shape):
+    if meta["kind"] == "kron2d":
+        return einops.rearrange(
+            matrix,
+            "(row_a col_a) (row_b col_b) -> (row_a row_b) (col_a col_b)",
+            row_a=meta["row_a"],
+            row_b=meta["row_b"],
+            col_a=meta["col_a"],
+            col_b=meta["col_b"],
+        )
+    if tuple(matrix.shape) == tuple(original_shape):
+        return matrix
+    return matrix.reshape(original_shape)
+
+
+def _balanced_factor_pair(value):
+    root = int(value ** 0.5)
+    for left in range(root, 0, -1):
+        if value % left == 0:
+            return left, value // left
+    return 1, value
+
+
 def _find_rank_for_relative_error(eigs: torch.Tensor, truncation_eps: float):
     total = eigs.sum()
     if total <= 0:

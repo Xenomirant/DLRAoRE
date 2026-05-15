@@ -3,12 +3,19 @@ import warnings
 from typing import Callable, Iterable, Optional, Tuple
 
 import torch
-from einops import rearrange
 from torch import nn
 from torch.optim import Optimizer
 from transformers.utils.versions import require_version
 
-from .dlra import _LowRankMatrix, _proj_split, _rand_nystrom_proj_split, _rand_svd_proj_split, _scale_low_rank_matrix
+from .dlra import (
+    _LowRankMatrix,
+    _proj_split,
+    _rand_nystrom_proj_split,
+    _rand_svd_proj_split,
+    _reshape_back_from_kronecker_projection,
+    _reshape_for_kronecker_projection,
+    _scale_low_rank_matrix,
+)
 from .rank_stats import collect_optimizer_rank_stats
 
 
@@ -39,6 +46,7 @@ class DLRAdamW(Optimizer):
             adaptive_rangefinder: bool = True,
             oversampling: int = 3,
             power_iterations: int = 0,
+            kronecker_mode: str = "none",
             weight_decay: float = 1e-3,
             correct_bias: bool = True,
             no_deprecation_warning: bool = False,
@@ -76,6 +84,8 @@ class DLRAdamW(Optimizer):
             raise ValueError("oversampling must be non-negative")
         if power_iterations < 0:
             raise ValueError("power_iterations must be non-negative")
+        if kronecker_mode not in ("none", "auto"):
+            raise ValueError("kronecker_mode must be none or auto")
 
         defaults = {
             "lr": lr,
@@ -90,6 +100,7 @@ class DLRAdamW(Optimizer):
             "adaptive_rangefinder": adaptive_rangefinder,
             "oversampling": oversampling,
             "power_iterations": power_iterations,
+            "kronecker_mode": kronecker_mode,
             "weight_decay": weight_decay,
             "correct_bias": correct_bias,
         }
@@ -129,7 +140,9 @@ class DLRAdamW(Optimizer):
             state["step"] = 0
 
         _validate_dlra_group_options(group)
-        grad_matrix, meta = _reshape_for_projection(grad, group.get("kronecker_mode", "none"))
+        grad_matrix, meta = _reshape_for_kronecker_projection(
+            grad, group.get("kronecker_mode", "none")
+        )
         rank = min(group["rank"], grad_matrix.shape[0], grad_matrix.shape[1])
         if rank < 1:
             self._adamw_step(p, grad, group)
@@ -181,7 +194,9 @@ class DLRAdamW(Optimizer):
 
         update_core = exp_avg / denom
         update_matrix = q_l.matmul(update_core).matmul(q_r.t())
-        update = _reshape_back_from_projection(update_matrix * group.get("scale", 1.0), meta, grad.shape)
+        update = _reshape_back_from_kronecker_projection(
+            update_matrix * group.get("scale", 1.0), meta, grad.shape
+        )
         p.add_(update.to(dtype=p.dtype), alpha=-step_size)
         _decoupled_weight_decay(p, group)
 
@@ -244,6 +259,7 @@ def _validate_dlra_group_options(group):
     update_beta = group.get("dlra_update_beta", 0.99)
     oversampling = group.get("oversampling", 3)
     power_iterations = group.get("power_iterations", 0)
+    kronecker_mode = group.get("kronecker_mode", "none")
 
     if projection not in ("fixed", "dlra", "svd", "rand_svd", "nystrom", "rand_nystrom"):
         raise ValueError("dlra_projection must be fixed, dlra, svd, rand_svd, nystrom, or rand_nystrom")
@@ -255,6 +271,8 @@ def _validate_dlra_group_options(group):
         raise ValueError("oversampling must be non-negative")
     if power_iterations < 0:
         raise ValueError("power_iterations must be non-negative")
+    if kronecker_mode not in ("none", "auto"):
+        raise ValueError("kronecker_mode must be none or auto")
 
 
 def _initial_gradient_approximation(grad_matrix, group, rank):
@@ -315,63 +333,6 @@ def _find_rank_for_relative_error(values: torch.Tensor, truncation_eps: float):
         return 1
     ratio = torch.cumsum(values, dim=0) / total
     return torch.searchsorted(ratio, 1 - truncation_eps).item() + 1
-
-
-def _reshape_for_projection(grad, kronecker_mode):
-    meta = {"kind": "identity"}
-    if kronecker_mode == "none":
-        return grad, meta
-    if kronecker_mode != "auto":
-        raise ValueError("kronecker_mode should be none or auto")
-    if grad.ndim != 2:
-        return grad, meta
-
-    rows, cols = grad.shape
-    row_a, row_b = _balanced_factor_pair(rows)
-    col_a, col_b = _balanced_factor_pair(cols)
-    if row_a == 1 or row_b == 1 or col_a == 1 or col_b == 1:
-        return grad, meta
-
-    return (
-        rearrange(
-            grad,
-            "(row_a row_b) (col_a col_b) -> (row_a col_a) (row_b col_b)",
-            row_a=row_a,
-            row_b=row_b,
-            col_a=col_a,
-            col_b=col_b,
-        ),
-        {
-            "kind": "kron2d",
-            "row_a": row_a,
-            "row_b": row_b,
-            "col_a": col_a,
-            "col_b": col_b,
-        },
-    )
-
-
-def _reshape_back_from_projection(grad, meta, original_shape):
-    if meta["kind"] == "kron2d":
-        return rearrange(
-            grad,
-            "(row_a col_a) (row_b col_b) -> (row_a row_b) (col_a col_b)",
-            row_a=meta["row_a"],
-            row_b=meta["row_b"],
-            col_a=meta["col_a"],
-            col_b=meta["col_b"],
-        )
-    if tuple(grad.shape) == tuple(original_shape):
-        return grad
-    return grad.reshape(original_shape)
-
-
-def _balanced_factor_pair(value):
-    root = int(value ** 0.5)
-    for left in range(root, 0, -1):
-        if value % left == 0:
-            return left, value // left
-    return 1, value
 
 
 def _decoupled_weight_decay(p, group):

@@ -73,20 +73,35 @@ LOW_RANK_COMMON_ARGS=(
   --weight_decay "${WEIGHT_DECAY}"
 )
 
-run_variant "GaLore" \
+run_variant "GaLore matrix" \
   "${LOW_RANK_COMMON_ARGS[@]}" \
   --subspace_update_method galore \
   --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-galore"
+  --run_name "${RUN_NAME_PREFIX}-galore-matrix"
 
-run_variant "SubTrack++" \
+run_variant "GaLore kron" \
+  "${LOW_RANK_COMMON_ARGS[@]}" \
+  --subspace_update_method galore \
+  --kronecker_mode auto \
+  --run_name "${RUN_NAME_PREFIX}-galore-kron"
+
+run_variant "SubTrack++ matrix" \
   "${LOW_RANK_COMMON_ARGS[@]}" \
   --subspace_update_method subtrack \
   --st_init_step_size "${ST_INIT_STEP_SIZE}" \
   --adaptive_optimizer \
   --recovery_scaling \
   --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-subtrackpp"
+  --run_name "${RUN_NAME_PREFIX}-subtrackpp-matrix"
+
+run_variant "SubTrack++ kron" \
+  "${LOW_RANK_COMMON_ARGS[@]}" \
+  --subspace_update_method subtrack \
+  --st_init_step_size "${ST_INIT_STEP_SIZE}" \
+  --adaptive_optimizer \
+  --recovery_scaling \
+  --kronecker_mode auto \
+  --run_name "${RUN_NAME_PREFIX}-subtrackpp-kron"
 
 run_variant "DyKAF" \
   "${TARGET_MODULE_ARGS[@]}" \
@@ -95,38 +110,73 @@ run_variant "DyKAF" \
   --weight_decay "${WEIGHT_DECAY}" \
   --run_name "${RUN_NAME_PREFIX}-dykaf"
 
-run_variant "LowRankDyKAF adaptive-rand" \
+run_variant "LowRankDyKAF matrix adaptive-rand" \
   "${TARGET_MODULE_ARGS[@]}" \
   --enable_dykaf \
   --low_rank_factors \
   --factors_rank "${FACTORS_RANK}" \
   --low_rank_proj rand \
+  --factor_kronecker_mode none \
   --truncation_eps "${TRUNCATION_EPS}" \
   --rangefinder_tau "${RANGEFINDER_TAU}" \
   --rangefinder_beta "${RANGEFINDER_BETA}" \
   --power_iterations "${POWER_ITERATIONS}" \
   --weight_decay "${WEIGHT_DECAY}" \
-  --run_name "${RUN_NAME_PREFIX}-low-rank-dykaf-adaptive-rand"
+  --run_name "${RUN_NAME_PREFIX}-low-rank-dykaf-matrix-adaptive-rand"
 
-run_variant "LowRankDyKAF PSI" \
+run_variant "LowKronRankDyKAF adaptive-rand" \
+  "${TARGET_MODULE_ARGS[@]}" \
+  --enable_dykaf \
+  --low_rank_factors \
+  --factors_rank "${FACTORS_RANK}" \
+  --low_rank_proj rand \
+  --factor_kronecker_mode auto \
+  --truncation_eps "${TRUNCATION_EPS}" \
+  --rangefinder_tau "${RANGEFINDER_TAU}" \
+  --rangefinder_beta "${RANGEFINDER_BETA}" \
+  --power_iterations "${POWER_ITERATIONS}" \
+  --weight_decay "${WEIGHT_DECAY}" \
+  --run_name "${RUN_NAME_PREFIX}-low-kron-rank-dykaf-adaptive-rand"
+
+run_variant "LowRankDyKAF matrix PSI" \
   "${TARGET_MODULE_ARGS[@]}" \
   --enable_dykaf \
   --low_rank_factors \
   --factors_rank "${FACTORS_RANK}" \
   --low_rank_proj psi \
+  --factor_kronecker_mode none \
   --power_iterations "${POWER_ITERATIONS}" \
   --weight_decay "${WEIGHT_DECAY}" \
-  --run_name "${RUN_NAME_PREFIX}-low-rank-dykaf-psi"
+  --run_name "${RUN_NAME_PREFIX}-low-rank-dykaf-matrix-psi"
 
-run_variant "DLRAdamW PSI" \
+run_variant "LowKronRankDyKAF PSI" \
+  "${TARGET_MODULE_ARGS[@]}" \
+  --enable_dykaf \
+  --low_rank_factors \
+  --factors_rank "${FACTORS_RANK}" \
+  --low_rank_proj psi \
+  --factor_kronecker_mode auto \
+  --power_iterations "${POWER_ITERATIONS}" \
+  --weight_decay "${WEIGHT_DECAY}" \
+  --run_name "${RUN_NAME_PREFIX}-low-kron-rank-dykaf-psi"
+
+run_variant "DLRAdamW matrix PSI add" \
   "${LOW_RANK_COMMON_ARGS[@]}" \
   --low_rank_method dlr \
   --dlra_projection dlra \
   --dlra_update_mode add \
   --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-dlradamw-psi"
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-matrix-psi-add"
 
-run_variant "DLRAdamW adaptive-rand" \
+run_variant "DLRAdamW kron PSI add" \
+  "${LOW_RANK_COMMON_ARGS[@]}" \
+  --low_rank_method dlr \
+  --dlra_projection dlra \
+  --dlra_update_mode add \
+  --kronecker_mode auto \
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-kron-psi-add"
+
+run_variant "DLRAdamW matrix adaptive-rand add" \
   "${LOW_RANK_COMMON_ARGS[@]}" \
   --low_rank_method dlr \
   --dlra_projection rand_svd \
@@ -137,18 +187,40 @@ run_variant "DLRAdamW adaptive-rand" \
   --dlra_update_mode add \
   --power_iterations "${POWER_ITERATIONS}" \
   --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-dlradamw-adaptive-rand"
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-matrix-adaptive-rand-add"
 
-run_variant "DLRAdamW PSI" \
+run_variant "DLRAdamW kron adaptive-rand add" \
+  "${LOW_RANK_COMMON_ARGS[@]}" \
+  --low_rank_method dlr \
+  --dlra_projection rand_svd \
+  --adaptive_rangefinder \
+  --truncation_eps "${TRUNCATION_EPS}" \
+  --rangefinder_tau "${RANGEFINDER_TAU}" \
+  --rangefinder_beta "${RANGEFINDER_BETA}" \
+  --dlra_update_mode add \
+  --power_iterations "${POWER_ITERATIONS}" \
+  --kronecker_mode auto \
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-kron-adaptive-rand-add"
+
+run_variant "DLRAdamW matrix PSI EMA" \
   "${LOW_RANK_COMMON_ARGS[@]}" \
   --low_rank_method dlr \
   --dlra_projection dlra \
   --dlra_update_mode ema \
   --dlra_update_beta "${DLRA_UPDATE_BETA}" \
   --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-dlradamw-ema-psi"
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-matrix-psi-ema"
 
-run_variant "DLRAdamW adaptive-rand" \
+run_variant "DLRAdamW kron PSI EMA" \
+  "${LOW_RANK_COMMON_ARGS[@]}" \
+  --low_rank_method dlr \
+  --dlra_projection dlra \
+  --dlra_update_mode ema \
+  --dlra_update_beta "${DLRA_UPDATE_BETA}" \
+  --kronecker_mode auto \
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-kron-psi-ema"
+
+run_variant "DLRAdamW matrix adaptive-rand EMA" \
   "${LOW_RANK_COMMON_ARGS[@]}" \
   --low_rank_method dlr \
   --dlra_projection rand_svd \
@@ -160,8 +232,22 @@ run_variant "DLRAdamW adaptive-rand" \
   --dlra_update_beta "${DLRA_UPDATE_BETA}" \
   --power_iterations "${POWER_ITERATIONS}" \
   --kronecker_mode none \
-  --run_name "${RUN_NAME_PREFIX}-dlradamw-ema-adaptive-rand"
-  
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-matrix-adaptive-rand-ema"
+
+run_variant "DLRAdamW kron adaptive-rand EMA" \
+  "${LOW_RANK_COMMON_ARGS[@]}" \
+  --low_rank_method dlr \
+  --dlra_projection rand_svd \
+  --adaptive_rangefinder \
+  --truncation_eps "${TRUNCATION_EPS}" \
+  --rangefinder_tau "${RANGEFINDER_TAU}" \
+  --rangefinder_beta "${RANGEFINDER_BETA}" \
+  --dlra_update_mode ema \
+  --dlra_update_beta "${DLRA_UPDATE_BETA}" \
+  --power_iterations "${POWER_ITERATIONS}" \
+  --kronecker_mode auto \
+  --run_name "${RUN_NAME_PREFIX}-dlradamw-kron-adaptive-rand-ema"
+
 
 echo "========================================"
 echo "Completed DyKAF/DLRA COPA suite"

@@ -671,6 +671,7 @@ def main(sweep_config=None):
             low_rank_factors=args.low_rank_factors,
             factors_rank=args.factors_rank,
             low_rank_proj=args.low_rank_proj,
+            factor_kronecker_mode=args.factor_kronecker_mode,
         )
         n_params = sum(p.numel() for p in model.parameters())
         n_dykaf_params = sum(p.numel() for p in low_rank_params)

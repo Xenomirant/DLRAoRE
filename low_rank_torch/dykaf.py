@@ -6,7 +6,13 @@ from torch import nn
 from torch.optim import Optimizer
 from transformers.utils.versions import require_version
 
-from .dlra import _SymmetricLowRankMatrix, _sym_proj_split, _sym_rand_proj_split
+from .dlra import (
+    _SymmetricLowRankMatrix,
+    _reshape_back_from_kronecker_projection,
+    _reshape_for_kronecker_projection,
+    _sym_proj_split,
+    _sym_rand_proj_split,
+)
 from .rank_stats import collect_optimizer_rank_stats
 
 
@@ -40,6 +46,7 @@ class DyKAF(Optimizer):
             low_rank_factors: bool = False, 
             factors_rank: int = 64,
             low_rank_proj: Literal["rand", "psi"] = "psi",
+            factor_kronecker_mode: Literal["none", "auto"] = "none",
             *args, **kwargs
     ):
         require_version("torch>=1.5.0")
@@ -62,6 +69,8 @@ class DyKAF(Optimizer):
             raise ValueError("precondition_frequency must be >= 1")
         if power_iterations < 1:
             raise ValueError("power_iterations must be >= 1")
+        if factor_kronecker_mode not in ("none", "auto"):
+            raise ValueError("factor_kronecker_mode must be none or auto")
 
         defaults = {
             "lr": lr,
@@ -80,6 +89,7 @@ class DyKAF(Optimizer):
             "low_rank_factors": low_rank_factors,
             "factors_rank": factors_rank,
             "low_rank_proj": low_rank_proj,
+            "factor_kronecker_mode": factor_kronecker_mode,
         }
         super().__init__(params, defaults)
 
@@ -189,11 +199,23 @@ class DyKAF(Optimizer):
         state = self.state[p]
         beta1, beta2 = group["betas"]
         grad = _state_tensor(grad)
+        grad_matrix, projection_meta = _reshape_for_kronecker_projection(
+            grad, group.get("factor_kronecker_mode", "none")
+        )
 
         if "step" not in state:
             state["step"] = 0
-        if "exp_avg" not in state:
-            _init_dykaf_state(state, grad, group)
+        needs_init = (
+            "exp_avg" not in state
+            or state.get("projection_meta") != projection_meta
+            or "q_l" not in state
+            or "q_r" not in state
+            or state["q_l"].shape[0] != grad_matrix.shape[0]
+            or state["q_r"].shape[0] != grad_matrix.shape[1]
+        )
+        if needs_init:
+            _init_dykaf_state(state, grad_matrix, group)
+            state["projection_meta"] = projection_meta
 
         state["step"] += 1
         step = state["step"]
@@ -205,7 +227,7 @@ class DyKAF(Optimizer):
         state["left_factor"], state["right_factor"] = _low_rank_kron_projector_split(
             state["left_factor"],
             state["right_factor"],
-            grad,
+            grad_matrix,
             preconditioner_beta,
             group["eps"],
             group,
@@ -223,7 +245,7 @@ class DyKAF(Optimizer):
                 c_l.square().matmul(state["exp_avg_sq"]).matmul(c_r.square())
             ).clamp(min=0.0)
 
-        grad_prime = state["q_l"].t().matmul(grad).matmul(state["q_r"])
+        grad_prime = state["q_l"].t().matmul(grad_matrix).matmul(state["q_r"])
 
         exp_avg = state["exp_avg"]
         exp_avg.mul_(beta1).add_(grad_prime, alpha=1.0 - beta1)
@@ -247,7 +269,10 @@ class DyKAF(Optimizer):
             step_size = step_size * math.sqrt(bias_correction2) / bias_correction1
 
         update_prime = exp_avg / denom
-        update = state["q_l"].matmul(update_prime).matmul(state["q_r"].t())
+        update_matrix = state["q_l"].matmul(update_prime).matmul(state["q_r"].t())
+        update = _reshape_back_from_kronecker_projection(
+            update_matrix, projection_meta, grad.shape
+        )
         p.add_(update.to(dtype=p.dtype), alpha=-step_size)
 
         _decoupled_weight_decay(p, group)
