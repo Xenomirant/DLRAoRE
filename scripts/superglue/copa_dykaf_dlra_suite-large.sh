@@ -64,36 +64,36 @@ run_variant() {
   python run_super_glue.py "${COMMON_ARGS[@]}" "$@"
 }
 
-# LOW_RANK_COMMON_ARGS=(
-#   --enable_low_rank
-#   "${TARGET_MODULE_ARGS[@]}"
-#   --lora_r "${DLRA_RANK}"
-#   --low_rank_scale "${LOW_RANK_SCALE}"
-#   --subspace_update_interval "${SUBSPACE_UPDATE_INTERVAL}"
-#   --weight_decay "${WEIGHT_DECAY}"
-# )
+LOW_RANK_COMMON_ARGS=(
+  --enable_low_rank
+  "${TARGET_MODULE_ARGS[@]}"
+  --lora_r "${DLRA_RANK}"
+  --low_rank_scale "${LOW_RANK_SCALE}"
+  --subspace_update_interval "${SUBSPACE_UPDATE_INTERVAL}"
+  --weight_decay "${WEIGHT_DECAY}"
+)
 
-# run_variant "GaLore" \
-#   "${LOW_RANK_COMMON_ARGS[@]}" \
-#   --subspace_update_method galore \
-#   --kronecker_mode none \
-#   --run_name "${RUN_NAME_PREFIX}-galore"
+run_variant "GaLore" \
+  "${LOW_RANK_COMMON_ARGS[@]}" \
+  --subspace_update_method galore \
+  --kronecker_mode none \
+  --run_name "${RUN_NAME_PREFIX}-galore"
 
-# run_variant "SubTrack++" \
-#   "${LOW_RANK_COMMON_ARGS[@]}" \
-#   --subspace_update_method subtrack \
-#   --st_init_step_size "${ST_INIT_STEP_SIZE}" \
-#   --adaptive_optimizer \
-#   --recovery_scaling \
-#   --kronecker_mode none \
-#   --run_name "${RUN_NAME_PREFIX}-subtrackpp"
+run_variant "SubTrack++" \
+  "${LOW_RANK_COMMON_ARGS[@]}" \
+  --subspace_update_method subtrack \
+  --st_init_step_size "${ST_INIT_STEP_SIZE}" \
+  --adaptive_optimizer \
+  --recovery_scaling \
+  --kronecker_mode none \
+  --run_name "${RUN_NAME_PREFIX}-subtrackpp"
 
-# run_variant "DyKAF" \
-#   "${TARGET_MODULE_ARGS[@]}" \
-#   --enable_dykaf \
-#   --power_iterations "${POWER_ITERATIONS}" \
-#   --weight_decay "${WEIGHT_DECAY}" \
-#   --run_name "${RUN_NAME_PREFIX}-dykaf"
+run_variant "DyKAF" \
+  "${TARGET_MODULE_ARGS[@]}" \
+  --enable_dykaf \
+  --power_iterations "${POWER_ITERATIONS}" \
+  --weight_decay "${WEIGHT_DECAY}" \
+  --run_name "${RUN_NAME_PREFIX}-dykaf"
 
 
 run_variant "LowRankDyKAF PSI" \
