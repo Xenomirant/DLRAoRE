@@ -288,18 +288,49 @@ def parse_args():
     return args
 
 
+_LOW_RANK_EXCLUDED_HEAD_NAMES = (
+    "classifier",
+    "classification_head",
+    "score",
+    "qa_outputs",
+    "lm_head",
+    "cls",
+    "pooler",
+)
+
+
+_NORM_MODULE_TYPES = (
+    torch.nn.LayerNorm,
+    torch.nn.BatchNorm1d,
+    torch.nn.BatchNorm2d,
+    torch.nn.BatchNorm3d,
+    torch.nn.GroupNorm,
+    torch.nn.InstanceNorm1d,
+    torch.nn.InstanceNorm2d,
+    torch.nn.InstanceNorm3d,
+    torch.nn.LocalResponseNorm,
+)
+
+
+def _is_low_rank_excluded_module(module_name, module):
+    if isinstance(module, (torch.nn.Embedding, *_NORM_MODULE_TYPES)):
+        return True
+    module_parts = module_name.split(".")
+    return any(part in _LOW_RANK_EXCLUDED_HEAD_NAMES for part in module_parts)
+
+
 def _selected_optimizer_params(model, args, target_modules_list):
     if args.lora_all_modules:
-        embedding_param_ids = {
+        excluded_param_ids = {
             id(param)
-            for module in model.modules()
-            if isinstance(module, torch.nn.Embedding)
-            for param in module.parameters(recurse=False)
+            for module_name, module in model.named_modules()
+            if _is_low_rank_excluded_module(module_name, module)
+            for param in module.parameters(recurse=True)
         }
         selected = [
             (name, param)
             for name, param in model.named_parameters()
-            if param.ndim > 1 and id(param) not in embedding_param_ids
+            if param.ndim > 1 and id(param) not in excluded_param_ids
         ]
     else:
         selected = []
